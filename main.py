@@ -238,28 +238,37 @@ def assign_points_and_sort(df, selected_song):
 
     return sorted_df[['filename', 'bpm', 'key', 'match_type', 'total_points', 'percentage']]  # Return sorted DataFrame with relevant columns
 
+def get_best_matches(df, selected_song):
+    """
+    Takes a song as input and returns the best matches with BPM, key, key match type, and match percentage.
+    """
+    if selected_song not in df['filename'].values:
+        print(f"Song '{selected_song}' not found in the dataset.")
+        return pd.DataFrame(columns=['filename', 'bpm', 'key', 'match_type', 'total_points', 'percentage'])
+
+    sorted_matches = assign_points_and_sort(df, selected_song)
+    sorted_matches = sorted_matches[sorted_matches['filename'] != selected_song]  # Exclude the selected song
+    return sorted_matches[['filename', 'bpm', 'key', 'match_type', 'percentage']]
+
 def create_gui(df):
-    # Create the GUI for song selection and visualization
+    """
+    Create the GUI for song selection and visualization.
+    """
     def on_song_select(event):
-        # Handle song selection from the dropdown
         selected_song = song_dropdown.get()
-        if selected_song:  # Ensure a song is selected
-            # Get details of the selected song
+        if selected_song:
             selected_song_data = df[df['filename'] == selected_song].iloc[0]
             selected_song_info.set(f"Title: {selected_song_data['filename']}, BPM: {selected_song_data['bpm']}, Key: {selected_song_data['key']}")
 
-            # Assign points and sort matches
-            sorted_matches = assign_points_and_sort(df, selected_song)
-
-            # Exclude the selected song from the table
-            sorted_matches = sorted_matches[sorted_matches['filename'] != selected_song]
+            # Use the new function to get best matches
+            best_matches = get_best_matches(df, selected_song)
 
             # Clear the treeview
             for item in matches_tree.get_children():
                 matches_tree.delete(item)
 
-            # Populate the treeview with the sorted matches
-            for _, row in sorted_matches.iterrows():
+            # Populate the treeview with the best matches
+            for _, row in best_matches.iterrows():
                 matches_tree.insert("", "end", values=(
                     row['filename'], 
                     row['bpm'], 

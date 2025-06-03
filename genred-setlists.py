@@ -67,14 +67,20 @@ def create_genre_based_gui(df, genres):
     main_frame = tk.Frame(root)
     main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
 
-    # Genre selection frame with canvas
+    # Genre selection frame with scrollable canvas
     genre_frame = tk.Frame(main_frame)
-    genre_frame.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=10, pady=5)
+    genre_frame.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=10, pady=10)
 
     tk.Label(genre_frame, text="Select Genres:", font=("Arial", 16, "bold")).pack(anchor="w", pady=5)
 
     canvas = tk.Canvas(genre_frame)
     canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+    scrollbar = tk.Scrollbar(genre_frame, orient=tk.VERTICAL, command=canvas.yview)
+    scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+    canvas.configure(yscrollcommand=scrollbar.set)
+    canvas.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
 
     genre_list_frame = tk.Frame(canvas)
     canvas.create_window((0, 0), window=genre_list_frame, anchor="nw")
