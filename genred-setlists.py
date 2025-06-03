@@ -43,8 +43,8 @@ def extract_metadata(folder_path):
 
 def create_genre_based_gui(df, genres):
     """Create a GUI for genre-based song selection."""
-    # Extract unique genres from the song data
-    # genres = df['genre'].dropna().unique().tolist()
+    # Keep track of songs added to the setlist
+    setlist = []
 
     def on_genre_select():
         # Filter songs based on selected genres
@@ -59,6 +59,16 @@ def create_genre_based_gui(df, genres):
             selected_song_data = df[df['filename'] == selected_song].iloc[0]
             selected_song_info.set(f"Title: {selected_song_data['filename']}, BPM: {selected_song_data['bpm']}, Key: {selected_song_data['key']}")
             
+            # Update selected genres text
+            selected_genres_text.set(f"Selected Genres: {', '.join([genre for genre, var in genre_vars.items() if var.get()])}")
+            
+            # Remove genre selection and song dropdown from view
+            genre_frame.pack_forget()
+            selection_frame.pack_forget()
+            
+            # Add the selected song to the setlist
+            setlist.append(selected_song)
+            
             # Display top matches
             display_top_matches_gui(df, selected_song)
 
@@ -67,11 +77,9 @@ def create_genre_based_gui(df, genres):
         for widget in matches_frame.winfo_children():
             widget.destroy()
 
-        # Get top matches
+        # Get top matches excluding songs already in the setlist
         sorted_matches = assign_points_and_sort(df, selected_song)
-        sorted_matches = sorted_matches[sorted_matches['filename'] != selected_song].head(5)  # Exclude selected song and get top 5
-
-        tk.Label(matches_frame, text="Top Matches:", font=("Arial", 16, "bold")).pack(anchor="w", pady=5)
+        sorted_matches = sorted_matches[~sorted_matches['filename'].isin(setlist)].head(5)  # Exclude songs in setlist
 
         # Create a scrollable canvas for matches
         canvas = tk.Canvas(matches_frame)
@@ -88,7 +96,14 @@ def create_genre_based_gui(df, genres):
 
         for _, row in sorted_matches.iterrows():
             match_text = f"{row['filename']} ({row['percentage']}%)"
-            tk.Button(matches_list_frame, text=match_text, font=("Arial", 12), width=40).pack(anchor="w", pady=2)
+            tk.Button(matches_list_frame, text=match_text, font=("Arial", 12), width=60,  # Adjust width for long names
+                      command=lambda song=row['filename']: add_to_setlist(song)).pack(anchor="w", pady=2)
+
+    def add_to_setlist(song):
+        # Add the selected song to the setlist and update the GUI
+        setlist.append(song)
+        tk.Label(selected_info_frame, text=f"{len(setlist)}. {song}", font=("Arial", 14)).pack(anchor="w", pady=5)  # Number the songs
+        display_top_matches_gui(df, song)
 
     root = tk.Tk()
     root.title("Genre-Based Setlist Generator")
@@ -97,6 +112,16 @@ def create_genre_based_gui(df, genres):
     # Main frame
     main_frame = tk.Frame(root)
     main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+
+    # Selected genres and song frame
+    selected_info_frame = tk.Frame(main_frame)
+    selected_info_frame.pack(side=tk.TOP, fill=tk.X, padx=10, pady=10)
+
+    selected_genres_text = tk.StringVar()
+    tk.Label(selected_info_frame, textvariable=selected_genres_text, font=("Arial", 14)).pack(anchor="w", pady=5)
+
+    selected_song_info = tk.StringVar()
+    tk.Label(selected_info_frame, textvariable=selected_song_info, font=("Arial", 14)).pack(anchor="w", pady=5)
 
     # Genre selection frame with scrollable canvas
     genre_frame = tk.Frame(main_frame)
@@ -128,10 +153,6 @@ def create_genre_based_gui(df, genres):
     song_dropdown = ttk.Combobox(selection_frame, font=("Arial", 14), height=10)
     song_dropdown.pack(fill=tk.X, pady=5)
     song_dropdown.bind("<<ComboboxSelected>>", on_song_select)
-
-    # Selected song info
-    selected_song_info = tk.StringVar()
-    tk.Label(selection_frame, textvariable=selected_song_info, font=("Arial", 14)).pack(anchor="w", pady=5)
 
     # Matches frame
     matches_frame = tk.Frame(main_frame)
