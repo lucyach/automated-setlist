@@ -53,11 +53,42 @@ def create_genre_based_gui(df, genres):
         song_dropdown['values'] = filtered_songs['filename'].tolist()
 
     def on_song_select(event):
-        # Display selected song details
+        # Display selected song details and top matches
         selected_song = song_dropdown.get()
         if selected_song:
             selected_song_data = df[df['filename'] == selected_song].iloc[0]
             selected_song_info.set(f"Title: {selected_song_data['filename']}, BPM: {selected_song_data['bpm']}, Key: {selected_song_data['key']}")
+            
+            # Display top matches
+            display_top_matches_gui(df, selected_song)
+
+    def display_top_matches_gui(df, selected_song):
+        # Clear previous matches
+        for widget in matches_frame.winfo_children():
+            widget.destroy()
+
+        # Get top matches
+        sorted_matches = assign_points_and_sort(df, selected_song)
+        sorted_matches = sorted_matches[sorted_matches['filename'] != selected_song].head(5)  # Exclude selected song and get top 5
+
+        tk.Label(matches_frame, text="Top Matches:", font=("Arial", 16, "bold")).pack(anchor="w", pady=5)
+
+        # Create a scrollable canvas for matches
+        canvas = tk.Canvas(matches_frame)
+        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        scrollbar = tk.Scrollbar(matches_frame, orient=tk.VERTICAL, command=canvas.yview)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        canvas.configure(yscrollcommand=scrollbar.set)
+        canvas.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+
+        matches_list_frame = tk.Frame(canvas)
+        canvas.create_window((0, 0), window=matches_list_frame, anchor="nw")
+
+        for _, row in sorted_matches.iterrows():
+            match_text = f"{row['filename']} ({row['percentage']}%)"
+            tk.Button(matches_list_frame, text=match_text, font=("Arial", 12), width=40).pack(anchor="w", pady=2)
 
     root = tk.Tk()
     root.title("Genre-Based Setlist Generator")
@@ -102,13 +133,118 @@ def create_genre_based_gui(df, genres):
     selected_song_info = tk.StringVar()
     tk.Label(selection_frame, textvariable=selected_song_info, font=("Arial", 14)).pack(anchor="w", pady=5)
 
+    # Matches frame
+    matches_frame = tk.Frame(main_frame)
+    matches_frame.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=10, pady=10)
+
     root.mainloop()
 
+def camelot_key_mapping():
+    # Define the Camelot mixing wheel for harmonic mixing
+    return {
+        "1A": ["12A", "2A", "1B"],
+        "2A": ["1A", "3A", "2B"],
+        "3A": ["2A", "4A", "3B"],
+        "4A": ["3A", "5A", "4B"],
+        "5A": ["4A", "6A", "5B"],
+        "6A": ["5A", "7A", "6B"],
+        "7A": ["6A", "8A", "7B"],
+        "8A": ["7A", "9A", "8B"],
+        "9A": ["8A", "10A", "9B"],
+        "10A": ["9A", "11A", "10B"],
+        "11A": ["10A", "12A", "11B"],
+        "12A": ["11A", "1A", "12B"],
+        "1B": ["12B", "2B", "1A"],
+        "2B": ["1B", "3B", "2A"],
+        "3B": ["2B", "4B", "3A"],
+        "4B": ["3B", "5B", "4A"],
+        "5B": ["4B", "6B", "5A"],
+        "6B": ["5B", "7B", "6A"],
+        "7B": ["6B", "8B", "7A"],
+        "8B": ["7B", "9B", "8A"],
+        "9B": ["8B", "10B", "9A"],
+        "10B": ["9B", "11B", "10A"],
+        "11B": ["10B", "12B", "11A"],
+        "12B": ["11B", "1B", "12A"]
+    }
+
+def musical_key_to_camelot(key):
+    # Map musical keys to Camelot keys
+    key_map = {
+        "C": "8B", "Cm": "5A", "C#": "3B", "C#m": "12A",
+        "D": "10B", "Dm": "7A", "D#": "5B", "D#m": "2A",
+        "E": "12B", "Em": "9A", "F": "7B", "Fm": "4A",
+        "F#": "2B", "F#m": "11A", "G": "9B", "Gm": "6A",
+        "G#": "4B", "G#m": "1A", "A": "11B", "Am": "8A",
+        "A#": "6B", "A#m": "3A", "B": "1B", "Bm": "10A",
+        "Db": "3B", "Dbm": "12A", "Ab": "4B", "Abm": "1A", "Bb": "6B", "Bbm": "3A",
+        "Eb": "5B", "Ebm": "2A"
+    }
+    return key_map.get(key, "")
+
+def assign_points_and_sort(df, selected_song):
+    # Assign points based on BPM and harmonic match closeness
+    df['bpm'] = pd.to_numeric(df['bpm'], errors='coerce')  # Convert BPM to numeric, invalid values become NaN
+    selected_bpm = pd.to_numeric(df.loc[df['filename'] == selected_song, 'bpm'].values[0], errors='coerce')
+    selected_key = df.loc[df['filename'] == selected_song, 'key'].values[0]
+    camelot_key = musical_key_to_camelot(selected_key)
+
+    if pd.isna(selected_bpm) or not camelot_key:
+        print(f"Invalid data for song '{selected_song}': BPM={selected_bpm}, Key={selected_key}")
+        return pd.DataFrame(columns=['filename', 'bpm', 'key', 'match_type', 'total_points', 'percentage'])
+
+    camelot_map = camelot_key_mapping()
+
+    # Calculate BPM difference points
+    df['bpm_diff'] = abs(df['bpm'] - selected_bpm)
+    df['bpm_points'] = df['bpm_diff'].apply(lambda diff: max(0, 10 - diff))
+
+    # Calculate harmonic match points and assign match type
+    def calculate_harmonic_points_and_type(key):
+        camelot_key_of_song = musical_key_to_camelot(key)
+        if camelot_key_of_song == camelot_key:
+            return 20, "="
+        elif camelot_key_of_song in camelot_map.get(camelot_key, [])[:1]:
+            return 15, "+++"
+        elif camelot_key_of_song in camelot_map.get(camelot_key, [])[:2]:
+            return 10, "++"
+        elif camelot_key_of_song in camelot_map.get(camelot_key, [])[2:]:
+            return 5, "+"
+        return 0, ""
+
+    df[['harmonic_points', 'match_type']] = df['key'].apply(
+        lambda key: pd.Series(calculate_harmonic_points_and_type(key))
+    )
+
+    # Calculate total points
+    df['total_points'] = df['bpm_points'] + df['harmonic_points']
+
+    # Calculate percentage based on maximum possible points (20 harmonic + 10 BPM = 30)
+    max_points = 30
+    df['percentage'] = (df['total_points'] / max_points * 100).round(2)
+
+    # Sort by total points in descending order
+    sorted_df = df.sort_values(by='total_points', ascending=False)
+
+    return sorted_df[['filename', 'bpm', 'key', 'match_type', 'total_points', 'percentage']]
+
+def display_top_matches(df, selected_song):
+    # Display the top 5 matches for the selected song
+    if selected_song not in df['filename'].values:
+        print(f"Song '{selected_song}' not found in the dataset.")
+        return
+
+    sorted_matches = assign_points_and_sort(df, selected_song)
+    sorted_matches = sorted_matches[sorted_matches['filename'] != selected_song]  # Exclude the selected song
+    top_matches = sorted_matches.head(5)  # Get the top 5 matches
+
+    print(f"Top 5 matches for '{selected_song}':")
+    print(top_matches.to_string(index=False))
+
 # Example usage
-folder_path = "tracks"  # Specify your music folder path herefolder_path = "tracks"  # Path to the folder containing MP3 files
-df, genres = extract_metadata(folder_path)  # Extract metadata and genres from the MP3 filesdf, genres = extract_metadata(folder_path)  # Extract metadata from the MP3 files
+folder_path = "tracks"  # Specify your music folder path here
+df, genres = extract_metadata(folder_path)  # Extract metadata and genres from the MP3 files
+create_genre_based_gui(df, genres)  # Launch the GUI
 
-
-
-create_genre_based_gui(df, genres)  # Create and display the GUI# df['genre'] = (["Pop", "Rock", "Jazz", "Electronic", "Classical"] * (len(df) // 5 + 1))[:len(df)]  # Ensure exact length match
+# df['genre'] = (["Pop", "Rock", "Jazz", "Electronic", "Classical"] * (len(df) // 5 + 1))[:len(df)]  # Ensure exact length match
 
