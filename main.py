@@ -1,5 +1,5 @@
 import os  # Provides functions to interact with the operating system
-from mutagen.mp3 import MP3  # Library for reading MP3 metadata
+from mutagen import File  # Import File for handling multiple audio formats
 from mutagen.id3 import ID3, TBPM, TKEY  # Classes for handling ID3 tags
 import pandas as pd  # Library for data manipulation and analysis
 import matplotlib.pyplot as plt  # Library for creating visualizations
@@ -8,29 +8,29 @@ import tkinter as tk  # GUI library for creating graphical interfaces
 from tkinter import ttk  # Provides themed widgets for tkinter
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg  # Embeds matplotlib plots in tkinter
 
-## pip install mutagen pandas matplotlib seaborn
 
 def extract_metadata(mp3_folder):
-    # Extract metadata (BPM and Key) from MP3 files in the specified folder
+    # Extract metadata (BPM and Key) from audio files in the specified folder
     data = []
 
     for filename in os.listdir(mp3_folder):  # Iterate through all files in the folder
-        if filename.lower().endswith(".mp3"):  # Check if the file is an MP3
+        if filename.lower().endswith((".mp3", ".m4a", ".wav", ".crdownload")):  # Check if the file is an MP3, M4A, WAV, or CRDOWNLOAD
             file_path = os.path.join(mp3_folder, filename)  # Get the full file path
             try:
-                audio = MP3(file_path, ID3=ID3)  # Load the MP3 file with ID3 tags
-                bpm = audio.tags.get('TBPM')  # Get the BPM tag
-                key = audio.tags.get('TKEY')  # Get the Key tag
+                audio = File(file_path)  # Use mutagen.File to handle multiple formats
+                if audio and audio.tags:  # Ensure the file has tags
+                    bpm = audio.tags.get('TBPM')  # Get the BPM tag
+                    key = audio.tags.get('TKEY')  # Get the Key tag
 
-                bpm_value = int(bpm.text[0]) if bpm else None  # Extract BPM value if available
-                key_value = key.text[0] if key else None  # Extract Key value if available
+                    bpm_value = int(bpm.text[0]) if bpm else None  # Extract BPM value if available
+                    key_value = key.text[0] if key else "Unknown"  # Assign "Unknown" if key is missing or None
 
-                # Append the extracted data to the list
-                data.append({
-                    "filename": filename,
-                    "bpm": bpm_value,
-                    "key": key_value
-                })
+                    # Append the extracted data to the list
+                    data.append({
+                        "filename": filename,
+                        "bpm": bpm_value,
+                        "key": key_value
+                    })
             except Exception as e:  # Handle errors during metadata extraction
                 print(f"Failed to read {filename}: {e}")
 
@@ -154,6 +154,14 @@ def find_harmonic_matches(df, selected_song):
     }
     if selected_song in df['filename'].values:  # Ensure the selected song exists
         selected_key = df.loc[df['filename'] == selected_song, 'key'].values[0]  # Get the key of the selected song
+        selected_bpm = df.loc[df['filename'] == selected_song, 'bpm'].values[0]  # Get the BPM of the selected song
+
+        if selected_key == "Unknown":  # Handle case where key is unknown
+            df['bpm_diff'] = abs(df['bpm'] - selected_bpm)  # Calculate BPM difference
+            bpm_matches = df[df['bpm_diff'] <= 5].sort_values('bpm_diff')  # Filter songs within ±5 BPM
+            bpm_matches['match_type'] = "BPM match"  # Assign match type for BPM-based matches
+            return bpm_matches[['filename', 'bpm', 'match_type']]  # Return filenames, BPMs, and match types
+
         camelot_key = musical_key_to_camelot(selected_key)  # Convert to Camelot key
         if camelot_key:
             matching_keys = camelot_map.get(camelot_key, [])  # Get matching Camelot keys
@@ -285,7 +293,7 @@ def create_gui(df):
     tk.Label(selection_frame, textvariable=selected_song_info, font=("Arial", 20), bg="#f0f0f0").pack(pady=10)  # Display selected song info
 
     # Matches chart frame
-    chart_frame = tk.Frame(main_frame, bg="#f0f0f0")  # Create the chart frame
+    chart_frame = tk.Frame(main_frame, bg="#f0f0f0", width=int(root.winfo_screenwidth() * 0.66))  # Chart frame takes 66% of the width
     chart_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=10, pady=10)  # Pack the frame on the left
 
     tk.Label(chart_frame, text="Matches Chart:", font=("Arial", 24, "bold"), bg="#f0f0f0").pack(pady=10)  # Label for matches chart
@@ -299,23 +307,23 @@ def create_gui(df):
     style.map("TCombobox", fieldbackground=[("readonly", "#f0f0f0")], background=[("readonly", "#f0f0f0")])  # Ensure consistent styling
 
     # Treeview for displaying matches
-    columns = ("Song Title", "BPM", "Key", "Match Type", "Percentage")
+    columns = ("Song Title", "BPM", "Key", "Key Match Type", "Match Percentage")
     matches_tree = ttk.Treeview(chart_frame, columns=columns, show="headings", height=25, style="Treeview")
     matches_tree.heading("Song Title", text="Song Title")
     matches_tree.heading("BPM", text="BPM")
     matches_tree.heading("Key", text="Key")
-    matches_tree.heading("Match Type", text="Match Type")
-    matches_tree.heading("Percentage", text="Percentage")
+    matches_tree.heading("Key Match Type", text="Key Match Type")
+    matches_tree.heading("Match Percentage", text=" Match Percentage")
     matches_tree.column("Song Title", anchor="w", width=300)
     matches_tree.column("BPM", anchor="center", width=100)
     matches_tree.column("Key", anchor="center", width=100)
-    matches_tree.column("Match Type", anchor="center", width=100)
-    matches_tree.column("Percentage", anchor="center", width=100)
+    matches_tree.column("Key Match Type", anchor="center", width=100)
+    matches_tree.column("Match Percentage", anchor="center", width=100)
     matches_tree.pack(fill=tk.BOTH, expand=True)
 
     # Visualization frame
-    visualization_frame = tk.Frame(main_frame, width=400)  # Create the visualization frame
-    visualization_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=10, pady=10)  # Pack the frame on the right
+    visualization_frame = tk.Frame(main_frame, bg="#f0f0f0", width=400, height=300)  # Set fixed width and height for the visualization frame
+    visualization_frame.pack(side=tk.RIGHT, fill=tk.BOTH, padx=10, pady=10)  # Pack the frame on the right
 
     visualize_data_in_frame(df, visualization_frame)  # Embed visualizations in the frame
 
@@ -324,7 +332,6 @@ def create_gui(df):
 # Usage
 folder_path = "tracks"  # Path to the folder containing MP3 files
 df = extract_metadata(folder_path)  # Extract metadata from the MP3 files
-print(df.head())  # Preview the extracted data
 create_gui(df)  # Create and display the GUI
 
 # Example track for testing
